@@ -945,8 +945,16 @@ function makeBirthdaySongUrl(){
 
   return URL.createObjectURL(new Blob([buffer], {type:'audio/wav'}));
 }
-birthdayAudio.src = makeBirthdaySongUrl();
+const fallbackBirthdaySongUrl = makeBirthdaySongUrl();
+let usingFallbackSong = false;
+birthdayAudio.src = 'semoga.mp3';
 birthdayAudio.volume = 1;
+function useFallbackSong(){
+  if(usingFallbackSong) return;
+  usingFallbackSong = true;
+  birthdayAudio.src = fallbackBirthdaySongUrl;
+  birthdayAudio.load();
+}
 function setMusicState(state){
   const isPlaying = state === 'playing';
   const needsTap = state === 'needs-tap';
@@ -965,19 +973,32 @@ async function playSong({autoplay = false} = {}){
     birthdayAudio.muted = false;
     await birthdayAudio.play();
   } catch(err){
-    setMusicState('needs-tap');
-    songStarting = false;
-    return false;
+    if(!usingFallbackSong){
+      useFallbackSong();
+      try{
+        birthdayAudio.currentTime = 0;
+        await birthdayAudio.play();
+      } catch(fallbackErr){
+        setMusicState('needs-tap');
+        songStarting = false;
+        return false;
+      }
+    } else {
+      setMusicState('needs-tap');
+      songStarting = false;
+      return false;
+    }
   }
   songPlaying = true;
   songStarting = false;
   setMusicState('playing');
   if(songTimer) clearTimeout(songTimer);
+  const songDurationMs = Number.isFinite(birthdayAudio.duration) ? birthdayAudio.duration * 1000 : melodyDurationMs;
   songTimer = setTimeout(()=>{
     songPlaying = false;
     songTimer = null;
     setMusicState('idle');
-  }, melodyDurationMs);
+  }, songDurationMs);
   return true;
 }
 songBtn.addEventListener('click', ()=> playSong());
@@ -1005,6 +1026,7 @@ birthdayAudio.addEventListener('ended', ()=>{
   songTimer = null;
   setMusicState('idle');
 });
+birthdayAudio.addEventListener('error', useFallbackSong, {once:true});
 
 blowBtn.addEventListener('click', ()=>{
   if(blown){
